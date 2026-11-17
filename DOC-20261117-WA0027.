@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Daily Machine Checks</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column for the mechanic's checklist; a wider dashboard (day list, month grid) and a QR sheet for the supervisor. */
+:root{
+  color-scheme:light;
+  --bg:#ecf0f2; --surface:#ffffff; --ink:#16252e; --muted:#586a75; --line:#d3dce1;
+  --accent:#0a5ea8; --accent-ink:#ffffff;
+  --ok:#17794a; --ok-bg:#dff3e7; --warn:#9a6200; --warn-bg:#fbefd2; --bad:#b3261e; --bad-bg:#fbe1de;
+  --f-sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme:dark;
+    --bg:#11171c; --surface:#19222a; --ink:#e4ecf0; --muted:#94a6b1; --line:#2a3640;
+    --accent:#5db0f0; --accent-ink:#07202f;
+    --ok:#52c98a; --ok-bg:#153626; --warn:#e5b04a; --warn-bg:#3a2d10; --bad:#f2796d; --bad-bg:#3d1b18;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);font-size:15px;line-height:1.45;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wrap{max-width:980px;margin:0 auto;padding-block:16px 40px}
+.wrap.narrow{max-width:560px}
+h1,h2,h3{margin:0;line-height:1.2;text-wrap:balance}
+h2{font-size:1.05rem;font-weight:600}
+.muted{color:var(--muted)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.small{font-size:.86rem}
+.eyebrow{font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:2px solid var(--ink);margin-bottom:18px}
+.brand{font-weight:600;font-size:1.15rem}
+.tabs{display:flex;gap:4px}
+.tab{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:6px;font-weight:500}
+.tab[aria-current="page"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.row.between{justify-content:space-between}
+.grow{flex:1;min-width:0}
+
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:9px 14px;font-weight:500;min-height:40px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.big{min-height:54px;font-size:1.05rem;width:100%}
+
+label.f{display:flex;flex-direction:column;gap:6px;font-weight:500}
+input[type=text],input[type=password],input[type=date],input[type=month],textarea{
+  width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:11px 12px;min-height:46px}
+textarea{resize:vertical;min-height:96px}
+
+.seg{display:flex}
+.seg button{flex:1;border:1px solid var(--line);background:var(--surface);padding:10px 12px;min-height:46px;font-weight:500}
+.seg button:first-child{border-radius:6px 0 0 6px}
+.seg button:last-child{border-radius:0 6px 6px 0}
+.seg button+button{border-left:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.seg.yn button[aria-pressed="true"][data-v="ok"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.seg.yn button[aria-pressed="true"][data-v="issue"]{background:var(--bad);border-color:var(--bad);color:#fff}
+
+.mhead{border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:16px}
+.mcode{font-family:var(--f-mono);font-weight:600;font-size:2.1rem;line-height:1.1;letter-spacing:.02em}
+.items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.item .q{font-size:1.02rem;font-weight:500}
+.item.answered-issue{border-color:var(--bad)}
+.done{text-align:center;padding:28px 18px}
+.tick{width:68px;height:68px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;font-size:2rem;font-weight:600;margin:0 auto 12px}
+.tick.bad{background:var(--bad-bg);color:var(--bad)}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.tile .n{font-family:var(--f-mono);font-size:1.7rem;font-weight:600;font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:.8rem;font-weight:600;white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.pill.none{background:var(--warn-bg);color:var(--warn)}
+.mrow{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:8px;border-left-width:5px}
+.mrow.ok{border-left-color:var(--ok)} .mrow.bad{border-left-color:var(--bad)} .mrow.none{border-left-color:var(--warn)}
+.mrow .info{min-width:0}
+.gridwrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table.g{border-collapse:separate;border-spacing:0;font-size:.78rem}
+table.g th,table.g td{padding:0;text-align:center}
+table.g th{font-weight:500;color:var(--muted);padding:6px 0;min-width:28px}
+table.g th.lbl,table.g td.lbl{position:sticky;left:0;background:var(--surface);text-align:left;padding:6px 10px;min-width:92px;z-index:1;border-right:1px solid var(--line);font-family:var(--f-mono);font-weight:600;font-size:.82rem}
+.cell{width:26px;height:26px;margin:2px;border-radius:4px;border:1px solid transparent;display:inline-grid;place-items:center;font-size:.8rem;font-weight:600;padding:0;background:transparent}
+.cell.ok{background:var(--ok-bg);color:var(--ok)}
+.cell.bad{background:var(--bad-bg);color:var(--bad)}
+.cell.miss{border-color:var(--warn);color:var(--warn)}
+.cell.fut{border:1px dashed var(--line);cursor:default}
+.cell.sel{outline:2px solid var(--ink)}
+.cell.na{color:var(--muted)}
+table.g td.lbl.item{font-family:var(--f-sans);font-weight:500;font-size:.8rem;white-space:normal;min-width:150px;max-width:190px;line-height:1.25}
+details.day{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+details.day summary{cursor:pointer;padding:12px 14px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;justify-content:space-between;list-style:none}
+details.day summary::-webkit-details-marker{display:none}
+.chk{border-top:1px solid var(--line);padding:12px 14px}
+.chk ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
+.chk li{display:flex;gap:8px;align-items:flex-start}
+.chk .r{font-weight:600;min-width:1.2em;text-align:center}
+.chk .r.ok{color:var(--ok)}
+.chk .r.bad{color:var(--bad)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--muted);align-items:center}
+.legend .cell{width:20px;height:20px;margin:0 4px 0 0;vertical-align:middle}
+.log{display:flex;flex-direction:column;gap:10px}
+.logitem{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--bad);border-radius:8px;padding:12px 14px}
+.logitem ul{margin:6px 0 0;padding-left:18px}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:8px;padding:22px;text-align:center;color:var(--muted)}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:10px 12px;font-size:.9rem}
+.err{background:var(--bad-bg);color:var(--bad);border-radius:6px;padding:10px 12px;font-size:.9rem;font-weight:500}
+
+.qrgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.qrcard{display:flex;flex-direction:column;gap:10px;min-width:0}
+.qr{width:168px;height:168px;background:#fff;padding:8px;border-radius:6px;border:1px solid var(--line);display:grid;place-items:center;color:#586a75;font-size:.8rem;text-align:center}
+.qr img,.qr canvas{width:100%;height:auto;display:block}
+.linktxt{font-family:var(--f-mono);font-size:.72rem;word-break:break-all;color:var(--muted)}
+
+@media print{
+  body{background:#fff;color:#000}
+  .top,.noprint,.btn,.note,.linktxt{display:none!important}
+  .card{border:1px solid #999;break-inside:avoid}
+  .qrgrid{grid-template-columns:repeat(2,1fr)}
+  .gridwrap{overflow:visible}
+  details.day{break-inside:avoid}
+}
+@media (prefers-reduced-motion:no-preference){.btn,.tab{transition:background .12s}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+/* ============ SETTINGS ============
+   Paste the Web app URL from your Google Apps Script deployment here (see README.md). */
+var API_URL='https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnS_Su-h-IMFUamPq-shtmMl0Ow-EeJXjZsn3-YC2rQ4YFJa6eCPZItxUEY_RX1nk3KgULZAzOZOhextNnuu0KJP9yHk52c8fWN4HXMiC1hE573AIYBYKcWg-_TCneUEpQcjfLwDfXlhNgx9zJcJ9W8fBC9bKDPi4BQel-x1IZPU7MsUa6LVv8NpctXqdtQFWgVYWusjBC6Cd2BMmaC2gruu3v5P3qDLxmGnyhOwJqpY5iibysTNVifQpHTSzthOHqa8B7zQ40fylRxA2q5LpaVE6ODeAooXx-np397-Q-mnknDDLm0&lib=MyVAk_qYUSqCC4znB217-8DVhGqFDB5mP';
+/* ================================== */
+
+(function(){
+var $app=document.getElementById('app');
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})};
+var pad=function(n){return String(n).padStart(2,'0')};
+var ymd=function(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
+var today=function(){return ymd(new Date())};
+var longDate=function(d){return new Date(d+'T00:00:00').toLocaleDateString([], {weekday:'short',day:'numeric',month:'short',year:'numeric'})};
+var monthName=function(m){var p=m.split('-');return new Date(+p[0],+p[1]-1,1).toLocaleDateString([], {month:'long',year:'numeric'})};
+function lsGet(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function ssGet(k){try{return sessionStorage.getItem(k)||''}catch(e){return ''}}
+function ssSet(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}
+var SHIFTS=['Morning','Evening','Night'];
+function guessShift(){var h=new Date().getHours();return h>=6&&h<14?'Morning':(h>=14&&h<22?'Evening':'Night')}
+var slug=function(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')};
+var CONFIGURED=API_URL&&API_URL.indexOf('PASTE_')!==0;
+var PAGE_BASE=location.href.replace(/#.*$/,'');
+
+var S={machines:[],mLoaded:false,mErr:'',checks:[],cLoaded:false,cErr:'',cMonth:null,pin:ssGet('mc_pin'),pinMsg:'',
+  day:today(),mode:'day',form:null,formErr:'',submitting:false,done:null,
+  hMonth:today().slice(0,7),hChecks:[],hLoaded:false,hErr:'',hKey:''};
+
+function route(){var h=decodeURIComponent(location.hash.replace(/^#/,'')).toLowerCase();
+  var parts=h.split('/');
+  if(parts[1]==='history')return {type:'hist',id:parts[0]};
+  if(!h||h==='dashboard')return {type:'dash'}; if(h==='machines')return {type:'mach'}; return {type:'machine',id:parts[0]}}
+function linkFor(id){return PAGE_BASE+'#'+id}
+
+/* ---------- server ---------- */
+async function apiGet(params){
+  var r=await fetch(API_URL+(API_URL.indexOf('?')<0?'?':'&')+new URLSearchParams(params).toString());
+  if(!r.ok)throw new Error('http '+r.status);return r.json();
+}
+async function apiPost(body){
+  var r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('http '+r.status);return r.json();
+}
+async function loadMachines(){
+  S.mErr='';
+  try{
+    var d=await apiGet({action:'machines'});
+    if(d.error)throw new Error(d.error);
+    S.machines=(d.machines||[]).map(function(m){return {id:slug(m.code),code:m.code,name:m.name||'',items:m.items||[]}});
+    S.mLoaded=true;
+  }catch(e){S.mErr='Could not load the machine list. Check the internet connection and try again.';S.mLoaded=true}
+  softRender();
+}
+async function loadChecks(silent){
+  if(!CONFIGURED)return;
+  var month=S.day.slice(0,7);
+  if(!silent){S.cLoaded=false;S.cErr='';render()}
+  try{
+    var d=await apiGet({action:'checks',month:month,pin:S.pin});
+    if(month!==S.day.slice(0,7))return;
+    if(d.error==='pin'){S.cErr='pin';S.cLoaded=true;if(S.pin)S.pinMsg='That PIN is not correct.';S.pin='';ssSet('mc_pin','');render();return}
+    if(d.error)throw new Error(d.error);
+    S.checks=d.checks||[];S.cMonth=month;S.cErr='';S.cLoaded=true;
+  }catch(e){if(!silent||!S.cLoaded){S.cErr='load';S.cLoaded=true}}
+  softRender();
+}
+
+async function loadHistory(){
+  if(!CONFIGURED)return;
+  var r=route();if(r.type!=='hist')return;
+  var m=S.machines.filter(function(x){return x.id===r.id})[0];
+  if(!m){render();return}
+  var key=m.code+'|'+S.hMonth;
+  S.hKey=key;S.hLoaded=false;S.hErr='';render();
+  try{
+    var d=await apiGet({action:'history',machine:m.code,month:S.hMonth,pin:S.pin});
+    if(S.hKey!==key)return;
+    if(d.error==='pin'){S.hErr='pin';S.hLoaded=true;if(S.pin)S.pinMsg='That PIN is not correct.';S.pin='';ssSet('mc_pin','');render();return}
+    if(d.error)throw new Error(d.error);
+    S.hChecks=d.checks||[];S.hLoaded=true;
+  }catch(e){if(S.hKey!==key)return;S.hErr='load';S.hLoaded=true}
+  render();
+}
+
+/* ---------- views ---------- */
+function header(cur){
+  return '<div class="top"><div class="brand">Daily Machine Checks</div><nav class="tabs" aria-label="Sections">'+
+  '<button class="tab" data-act="nav" data-v="dashboard"'+(cur==='dash'?' aria-current="page"':'')+'>Dashboard</button>'+
+  '<button class="tab" data-act="nav" data-v="machines"'+(cur==='mach'?' aria-current="page"':'')+'>Machines &amp; QR</button></nav></div>';
+}
+function setupNote(){return '<div class="note">This page is not connected to its Google Sheet yet. Paste the Web app URL into <code>API_URL</code> in index.html (see README.md).</div>'}
+
+function readiness(m){
+  var f=S.form,n=m.items.length,ans=0,iss=0;
+  for(var i=0;i<n;i++){if(f.answers[i])ans++;if(f.answers[i]==='issue')iss++}
+  if(!f.name.trim())return {ok:false,hint:'Enter your name to submit.',iss:iss};
+  if(ans<n)return {ok:false,hint:(n-ans)+' item'+(n-ans===1?'':'s')+' left to answer.',iss:iss};
+  if(iss>0&&!f.remarks.trim())return {ok:false,hint:'Describe the issue in the box below.',iss:iss};
+  return {ok:true,hint:iss?iss+' issue'+(iss===1?'':'s')+' will be reported.':'All items OK.',iss:iss};
+}
+
+function viewMachine(id){
+  var shell=function(inner){return '<div class="wrap narrow">'+inner+'</div>'};
+  var head='<div class="mhead"><div class="mcode">'+esc(id.toUpperCase())+'</div></div>';
+  if(!CONFIGURED)return shell(head+setupNote());
+  if(!S.mLoaded)return shell(head+'<p class="muted">Loading checklist…</p>');
+  if(S.mErr)return shell(head+'<div class="err">'+esc(S.mErr)+'</div><p><button class="btn" data-act="reload">Try again</button></p>');
+  var m=S.machines.filter(function(x){return x.id===id})[0];
+  if(!m)return shell(head+'<div class="empty">This machine is not set up yet. Ask your supervisor to add it to the Machines tab of the Google Sheet.</div><p><button class="btn" data-act="nav" data-v="dashboard">Open dashboard</button></p>');
+  if(!m.items.length)return shell(head+'<div class="empty">This machine has no checklist items yet. Ask your supervisor to add them in the Checklist tab.</div>');
+  if(S.done&&S.done.machineId===id){
+    var d=S.done,bad=d.issues>0;
+    return shell('<div class="card done"><div class="tick'+(bad?' bad':'')+'">'+(bad?'!':'✓')+'</div><h2>Check submitted</h2><p class="muted">'+esc(m.code)+' · '+esc(d.time)+(bad?' · '+d.issues+' issue'+(d.issues===1?'':'s')+' reported':' · all items OK')+'</p>'+
+      '<div class="stack" style="margin-top:14px"><button class="btn big" data-act="again">Submit another check</button><button class="btn" data-act="hist" data-id="'+esc(m.id)+'">Auditor: view this month\'s history</button></div></div>');
+  }
+  if(!S.form||S.form.machineId!==id)S.form={machineId:id,name:lsGet('mc_name'),shift:guessShift(),answers:{},remarks:''};
+  var f=S.form,r=readiness(m),items='';
+  m.items.forEach(function(q,i){
+    var a=f.answers[i];
+    items+='<li class="item'+(a==='issue'?' answered-issue':'')+'"><div class="q">'+esc(q)+'</div><div class="seg yn" role="group" aria-label="'+esc(q)+'">'+
+      '<button data-act="ans" data-i="'+i+'" data-v="ok" aria-pressed="'+(a==='ok')+'">OK</button>'+
+      '<button data-act="ans" data-i="'+i+'" data-v="issue" aria-pressed="'+(a==='issue')+'">Issue</button></div></li>';
+  });
+  var shifts=SHIFTS.map(function(s){return '<button data-act="shift" data-v="'+s+'" aria-pressed="'+(f.shift===s)+'">'+s+'</button>'}).join('');
+  return shell(
+    '<div class="mhead"><div class="eyebrow">Daily check · '+esc(longDate(today()))+'</div><div class="mcode">'+esc(m.code)+'</div>'+(m.name?'<div class="muted">'+esc(m.name)+'</div>':'')+'</div>'+
+    '<div class="stack">'+
+    '<label class="f" for="f-name">Your name<input type="text" id="f-name" data-f="name" autocomplete="name" maxlength="60" value="'+esc(f.name)+'"></label>'+
+    '<div style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:500">Shift</span><div class="seg" role="group" aria-label="Shift">'+shifts+'</div></div>'+
+    '<ul class="items">'+items+'</ul>'+
+    '<label class="f" for="f-rem">'+(r.iss?'What is wrong? (required)':'Remarks (optional)')+'<textarea id="f-rem" data-f="remarks" maxlength="1000" placeholder="'+(r.iss?'Describe the issue and where it is':'Anything the next shift should know')+'">'+esc(f.remarks)+'</textarea></label>'+
+    (S.formErr?'<div class="err">'+esc(S.formErr)+'</div>':'')+
+    '<div><button class="btn primary big" id="submit" data-act="submit"'+(r.ok&&!S.submitting?'':' disabled')+'>'+(S.submitting?'Saving…':'Submit check')+'</button><p class="muted small" id="hint" style="margin:8px 0 0">'+esc(r.hint)+'</p></div>'+
+    '<div class="noprint" style="text-align:center;border-top:1px solid var(--line);padding-top:14px"><button class="btn" data-act="hist" data-id="'+esc(m.id)+'">Auditor: view this month\'s history</button></div>'+
+    '</div>');
+}
+
+function stat(code,date){
+  var l=S.checks.filter(function(c){return c.code===code&&c.date===date});
+  var iss=0;l.forEach(function(c){iss+=c.issues||0});
+  return {list:l,n:l.length,issues:iss,state:!l.length?'none':(iss?'bad':'ok')};
+}
+function issueLog(list){
+  if(!list.length)return '<div class="empty">No issues reported in this period.</div>';
+  return '<div class="log">'+list.map(function(c){
+    return '<div class="logitem"><div class="row between"><strong class="mono">'+esc(c.code)+'</strong><span class="muted small">'+esc(c.date)+' '+esc(c.time)+' · '+esc(c.shift)+' · '+esc(c.operator)+'</span></div>'+
+      ((c.failed||[]).length?'<ul>'+c.failed.map(function(q){return '<li>'+esc(q)+'</li>'}).join('')+'</ul>':'')+
+      (c.remarks?'<div class="small" style="margin-top:6px">'+esc(c.remarks)+'</div>':'')+'</div>';
+  }).join('')+'</div>';
+}
+
+function viewDash(){
+  if(!CONFIGURED)return setupNote();
+  if(S.cErr==='pin'){
+    return '<div class="card stack" style="max-width:380px"><h2>Supervisor PIN</h2><p class="muted" style="margin:0">Enter the dashboard PIN to see the records.</p>'+
+      '<label class="f" for="f-pin">PIN<input type="password" id="f-pin" data-f="pin" autocomplete="off"></label>'+
+      (S.pinMsg?'<div class="err">'+esc(S.pinMsg)+'</div>':'')+'<button class="btn primary" data-act="setpin">Open dashboard</button></div>';
+  }
+  if(S.mErr)return '<div class="err">'+esc(S.mErr)+'</div><p><button class="btn" data-act="reload">Try again</button></p>';
+  if(S.mLoaded&&!S.machines.length)return '<div class="empty">No machines yet. Add them to the Machines tab of the Google Sheet.</div>';
+  var month=S.day.slice(0,7);
+  var controls='<div class="row between"><div class="seg" style="min-width:190px" role="group" aria-label="View"><button data-act="mode" data-v="day" aria-pressed="'+(S.mode==='day')+'">Daily</button><button data-act="mode" data-v="month" aria-pressed="'+(S.mode==='month')+'">Monthly</button></div>'+
+    '<div class="row">'+(S.mode==='day'?'<input type="date" id="f-day" data-f="day" value="'+esc(S.day)+'" aria-label="Date" style="width:auto">':'<input type="month" id="f-month" data-f="month" value="'+esc(month)+'" aria-label="Month" style="width:auto">')+
+    '<button class="btn" data-act="refresh">Refresh</button></div></div>';
+  var body;
+  if(!S.mLoaded||!S.cLoaded)body='<p class="muted">Loading…</p>';
+  else if(S.cErr)body='<div class="err">Could not load the checks. Check the internet connection.</div><p><button class="btn" data-act="refresh">Try again</button></p>';
+  else if(S.mode==='day')body=dayBody(S.machines);
+  else body=monthBody(S.machines,month);
+  return '<div class="stack">'+controls+body+'</div>';
+}
+function dayBody(ms){
+  var checked=0,issues=0,rows='',iss=[];
+  ms.forEach(function(m){
+    var s=stat(m.code,S.day);if(s.n)checked++;issues+=s.issues;
+    s.list.forEach(function(c){if(c.issues)iss.push(c)});
+    var last=s.list[s.n-1];
+    var pill=s.state==='none'?'<span class="pill none">Not checked</span>':(s.state==='bad'?'<span class="pill bad">! '+s.issues+' issue'+(s.issues===1?'':'s')+'</span>':'<span class="pill ok">✓ All OK</span>');
+    rows+='<div class="mrow '+s.state+'"><div class="info"><strong class="mono">'+esc(m.code)+'</strong> <span class="muted">'+esc(m.name)+'</span><div class="muted small">'+
+      (s.n?s.n+' check'+(s.n===1?'':'s')+' · last '+esc(last.time)+' by '+esc(last.operator)+' ('+esc(last.shift)+')':'No check recorded')+'</div></div>'+pill+'</div>';
+  });
+  return '<div class="muted">'+esc(longDate(S.day))+'</div>'+
+    '<div class="tiles"><div class="tile"><div class="eyebrow">Checked</div><div class="n">'+checked+' / '+ms.length+'</div></div>'+
+    '<div class="tile"><div class="eyebrow">Not checked</div><div class="n">'+(ms.length-checked)+'</div></div>'+
+    '<div class="tile"><div class="eyebrow">Issues flagged</div><div class="n">'+issues+'</div></div></div>'+
+    '<div class="stack" style="gap:8px">'+rows+'</div><h2>Issues on this day</h2>'+issueLog(iss);
+}
+function monthBody(ms,month){
+  var p=month.split('-'),dim=new Date(+p[0],+p[1],0).getDate(),t=today();
+  var head='<tr><th class="lbl"></th>';
+  for(var d=1;d<=dim;d++)head+='<th>'+d+'</th>';head+='</tr>';
+  var total=0,covered=0,rows='';
+  ms.forEach(function(m){
+    rows+='<tr><td class="lbl">'+esc(m.code)+'</td>';
+    for(var d=1;d<=dim;d++){
+      var date=month+'-'+pad(d);
+      if(date>t){rows+='<td><span class="cell fut" aria-hidden="true"></span></td>';continue}
+      var s=stat(m.code,date),cls,glyph,title;total++;
+      if(s.state==='none'){cls='miss';glyph='·';title='Not checked'}else{covered++;cls=s.state;glyph=s.state==='bad'?'!':'✓';title=s.n+' check'+(s.n===1?'':'s')+(s.issues?', '+s.issues+' issue'+(s.issues===1?'':'s'):', all OK')}
+      rows+='<td><button class="cell '+cls+(date===S.day?' sel':'')+'" data-act="goday" data-d="'+date+'" title="'+esc(m.code+' '+date+': '+title)+'" aria-label="'+esc(m.code+' '+date+': '+title)+'">'+glyph+'</button></td>';
+    }
+    rows+='</tr>';
+  });
+  var issues=S.checks.filter(function(c){return c.issues>0}).sort(function(a,b){return a.ts<b.ts?1:-1});
+  var cov=total?Math.round(covered*100/total):0;
+  return '<div class="muted">'+esc(monthName(month))+'</div>'+
+    '<div class="tiles"><div class="tile"><div class="eyebrow">Checks logged</div><div class="n">'+S.checks.length+'</div></div>'+
+    '<div class="tile"><div class="eyebrow">Days covered</div><div class="n">'+cov+'%</div></div>'+
+    '<div class="tile"><div class="eyebrow">Checks with issues</div><div class="n">'+issues.length+'</div></div></div>'+
+    '<div class="gridwrap"><table class="g" aria-label="Checks per machine per day">'+head+rows+'</table></div>'+
+    '<div class="legend"><span><span class="cell ok">✓</span>Checked, all OK</span><span><span class="cell bad">!</span>Issue flagged</span><span><span class="cell miss">·</span>Missed</span><span>Tap a cell to open that day</span></div>'+
+    '<div class="row between"><h2>Issues this month</h2><button class="btn" data-act="csv"'+(S.checks.length?'':' disabled')+'>Export CSV</button></div>'+issueLog(issues);
+}
+
+function viewMach(){
+  if(!CONFIGURED)return setupNote();
+  if(S.mErr)return '<div class="err">'+esc(S.mErr)+'</div><p><button class="btn" data-act="reload">Try again</button></p>';
+  if(!S.mLoaded)return '<p class="muted">Loading machines…</p>';
+  var local=/^(file|about):/.test(location.protocol);
+  var cards='';
+  S.machines.forEach(function(m){
+    cards+='<div class="card qrcard"><div class="qr" data-id="'+esc(m.id)+'">'+(local?'Upload the page to GitHub first':'')+'</div>'+
+      '<div><strong class="mono" style="font-size:1.15rem">'+esc(m.code)+'</strong> <span class="muted">'+esc(m.name)+'</span><div class="muted small">'+m.items.length+' checklist items</div></div>'+
+      '<div class="linktxt">'+esc(linkFor(m.id))+'</div>'+
+      '<div class="row noprint"><button class="btn" data-act="copy" data-id="'+esc(m.id)+'">Copy link</button><button class="btn" data-act="png" data-id="'+esc(m.id)+'">Save QR image</button></div></div>';
+  });
+  return '<div class="stack"><div class="card stack noprint"><h2>QR codes</h2><p class="muted small" style="margin:0">Each code opens that machine\'s checklist. Print them, laminate them and stick one on each machine. To add or change machines and checklist items, edit the <strong>Machines</strong> and <strong>Checklist</strong> tabs in the Google Sheet and reload this page.</p>'+
+    '<div><button class="btn primary" data-act="print">Print all QR codes</button></div></div>'+
+    (S.machines.length?'<div class="qrgrid">'+cards+'</div>':'<div class="empty">No machines yet. Add them to the Machines tab of the Google Sheet.</div>')+'</div>';
+}
+
+function viewHistory(id){
+  var shell=function(inner){return '<div class="wrap">'+inner+'</div>'};
+  if(!CONFIGURED)return shell(setupNote());
+  var head0='<div class="mhead"><div class="mcode">'+esc(id.toUpperCase())+'</div></div>';
+  if(!S.mLoaded)return shell(head0+'<p class="muted">Loading…</p>');
+  if(S.mErr)return shell(head0+'<div class="err">'+esc(S.mErr)+'</div><p><button class="btn" data-act="reload">Try again</button></p>');
+  var m=S.machines.filter(function(x){return x.id===id})[0];
+  if(!m)return shell(head0+'<div class="empty">This machine is not set up yet. Ask your supervisor to add it to the Machines tab of the Google Sheet.</div>');
+  var month=S.hMonth;
+  var bar='<div class="top noprint"><div class="brand">Audit history</div><nav class="tabs"><button class="tab" data-act="back" data-id="'+esc(m.id)+'">Back to checklist</button></nav></div>';
+  var mh='<div class="mhead"><div class="eyebrow">Audit history · '+esc(monthName(month))+'</div><div class="mcode">'+esc(m.code)+'</div>'+(m.name?'<div class="muted">'+esc(m.name)+'</div>':'')+'</div>';
+  if(S.hErr==='pin')return shell(bar+mh+'<div class="card stack" style="max-width:380px"><h2>PIN required</h2><p class="muted" style="margin:0">Enter the auditor or supervisor PIN to see this machine\'s history.</p>'+
+    '<label class="f" for="f-pin">PIN<input type="password" id="f-pin" data-f="pin" autocomplete="off"></label>'+
+    (S.pinMsg?'<div class="err">'+esc(S.pinMsg)+'</div>':'')+'<button class="btn primary" data-act="setpin">Open history</button></div>');
+  var controls='<div class="row between noprint"><input type="month" id="f-hmonth" data-f="hmonth" value="'+esc(month)+'" aria-label="Month" style="width:auto"><div class="row">'+
+    '<button class="btn" data-act="hrefresh">Refresh</button><button class="btn" data-act="hcsv"'+(S.hLoaded&&S.hChecks.length?'':' disabled')+'>Export CSV</button><button class="btn" data-act="print">Print</button></div></div>';
+  var body;
+  if(!S.hLoaded)body='<p class="muted">Loading…</p>';
+  else if(S.hErr)body='<div class="err">Could not load the history. Check the internet connection.</div>';
+  else body=histBody(m,month);
+  return shell(bar+mh+'<div class="stack">'+controls+body+'</div>');
+}
+function histBody(m,month){
+  var p=month.split('-'),dim=new Date(+p[0],+p[1],0).getDate(),t=today(),byDate={};
+  S.hChecks.forEach(function(c){(byDate[c.date]=byDate[c.date]||[]).push(c)});
+  var items=m.items.slice();
+  S.hChecks.forEach(function(c){(c.answers||[]).forEach(function(a){if(items.indexOf(a.q)<0)items.push(a.q)})});
+  var elapsed=0,covered=0,missed=[],issueChecks=0,d,date;
+  for(d=1;d<=dim;d++){date=month+'-'+pad(d);if(date>t)break;elapsed++;if(byDate[date])covered++;else missed.push(d)}
+  S.hChecks.forEach(function(c){if(c.issues>0)issueChecks++});
+  var head='<tr><th class="lbl"></th>';
+  for(d=1;d<=dim;d++)head+='<th>'+d+'</th>';
+  head+='</tr>';
+  var rows='';
+  items.forEach(function(q){
+    rows+='<tr><td class="lbl item">'+esc(q)+'</td>';
+    for(var d2=1;d2<=dim;d2++){
+      var dt=month+'-'+pad(d2),cs=byDate[dt]||[],cls,glyph,title;
+      if(dt>t){rows+='<td><span class="cell fut" aria-hidden="true"></span></td>';continue}
+      if(!cs.length){cls='miss';glyph='·';title='Not checked'}
+      else{
+        var seen=false,bad=false;
+        cs.forEach(function(c){(c.answers||[]).forEach(function(a){if(a.q===q){seen=true;if(!a.ok)bad=true}})});
+        if(!seen){cls='na';glyph='–';title='Not on the checklist that day'}
+        else if(bad){cls='bad';glyph='✗';title='Issue'}
+        else{cls='ok';glyph='✓';title='OK'}
+      }
+      var lab=q+' · '+dt+': '+title;
+      rows+='<td><span class="cell '+cls+'" title="'+esc(lab)+'" role="img" aria-label="'+esc(lab)+'">'+glyph+'</span></td>';
+    }
+    rows+='</tr>';
+  });
+  rows+='<tr><td class="lbl item">Checks done</td>';
+  for(d=1;d<=dim;d++){
+    date=month+'-'+pad(d);
+    if(date>t)rows+='<td><span class="cell fut" aria-hidden="true"></span></td>';
+    else rows+='<td><span class="cell na">'+(byDate[date]?byDate[date].length:'·')+'</span></td>';
+  }
+  rows+='</tr>';
+  var dates=Object.keys(byDate).sort().reverse();
+  var log=dates.length?'<div class="log" style="border:0;padding:0">'+dates.map(function(dt){
+    var cs=byDate[dt],iss=0;cs.forEach(function(c){iss+=c.issues});
+    var pill=iss?'<span class="pill bad">! '+iss+' issue'+(iss===1?'':'s')+'</span>':'<span class="pill ok">✓ All OK</span>';
+    return '<details class="day"'+(iss?' open':'')+'><summary><span><strong>'+esc(longDate(dt))+'</strong> <span class="muted small">'+cs.length+' check'+(cs.length===1?'':'s')+'</span></span>'+pill+'</summary>'+
+      cs.map(function(c){
+        return '<div class="chk"><div class="row between"><strong>'+esc(c.time)+' · '+esc(c.shift)+'</strong><span class="small">Checked by <strong>'+esc(c.operator)+'</strong></span></div><ul>'+
+          (c.answers||[]).map(function(a){return '<li><span class="r '+(a.ok?'ok':'bad')+'">'+(a.ok?'✓':'✗')+'</span><span>'+esc(a.q)+'</span></li>'}).join('')+'</ul>'+
+          (c.remarks?'<div class="small" style="margin-top:8px"><span class="muted">Remarks:</span> '+esc(c.remarks)+'</div>':'')+'</div>';
+      }).join('')+'</details>';
+  }).join('')+'</div>':'<div class="empty">No checks recorded for this machine in '+esc(monthName(month))+'.</div>';
+  return '<div class="tiles"><div class="tile"><div class="eyebrow">Days checked</div><div class="n">'+covered+' / '+elapsed+'</div></div>'+
+    '<div class="tile"><div class="eyebrow">Checks logged</div><div class="n">'+S.hChecks.length+'</div></div>'+
+    '<div class="tile"><div class="eyebrow">Checks with issues</div><div class="n">'+issueChecks+'</div></div></div>'+
+    (missed.length?'<div class="note">No check recorded on day '+missed.join(', ')+'.</div>':'')+
+    '<div class="gridwrap"><table class="g" aria-label="Checklist results per day for '+esc(m.code)+'">'+head+rows+'</table></div>'+
+    '<div class="legend"><span><span class="cell ok">✓</span>OK</span><span><span class="cell bad">✗</span>Issue</span><span><span class="cell miss">·</span>No check</span></div>'+
+    '<h2>Every check, with who did it</h2>'+log;
+}
+function exportHistCsv(){
+  var rows=[['Date','Time','Machine','Shift','Operator','Item','Result','Remarks']];
+  S.hChecks.forEach(function(c){(c.answers||[]).forEach(function(a){rows.push([c.date,c.time,c.code,c.shift,c.operator,a.q,a.ok?'OK':'ISSUE',c.remarks])})});
+  saveBlob(new Blob(['﻿'+rows.map(function(r){return r.map(csvCell).join(',')}).join('\n')],{type:'text/csv'}),'history-'+route().id+'-'+S.hMonth+'.csv');
+}
+function render(){
+  var r=route(),html;
+  if(r.type==='machine')html=viewMachine(r.id);
+  else if(r.type==='hist')html=viewHistory(r.id);
+  else html='<div class="wrap">'+header(r.type)+(r.type==='dash'?viewDash():viewMach())+'</div>';
+  $app.innerHTML=html;
+  if(r.type==='mach')drawQR();
+}
+function softRender(){
+  var a=document.activeElement;
+  if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return;
+  render();
+}
+function drawQR(){
+  if(!window.QRCode||/^(file|about):/.test(location.protocol))return;
+  var els=$app.querySelectorAll('.qr[data-id]');
+  for(var i=0;i<els.length;i++){
+    var el=els[i];el.textContent='';
+    try{new QRCode(el,{text:linkFor(el.dataset.id),width:256,height:256,correctLevel:QRCode.CorrectLevel.M})}catch(e){el.textContent='QR failed'}
+  }
+}
+
+/* ---------- actions ---------- */
+async function submit(){
+  var m=S.machines.filter(function(x){return x.id===S.form.machineId})[0];
+  if(!m||S.submitting||!readiness(m).ok)return;
+  var f=S.form;
+  S.submitting=true;S.formErr='';render();
+  try{
+    var d=await apiPost({machine:m.code,shift:f.shift,operator:f.name.trim(),remarks:f.remarks.trim(),
+      answers:m.items.map(function(q,i){return f.answers[i]==='ok'})});
+    if(d.ok){lsSet('mc_name',f.name.trim());S.done={machineId:m.id,time:d.time,issues:d.issues};S.form=null}
+    else if(d.error==='checklist_changed'){S.formErr='The checklist was updated. Reload the page and start again.'}
+    else S.formErr='The check was not saved ('+(d.error||'unknown error')+'). Try again.';
+  }catch(e){S.formErr='The check was not saved. Check the internet connection and press Submit again.'}
+  S.submitting=false;render();
+}
+function csvCell(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+function saveBlob(blob,name){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500)}
+function exportCsv(){
+  var rows=[['Date','Time','Machine','Shift','Operator','Issues','Failed items','Remarks']];
+  S.checks.forEach(function(c){rows.push([c.date,c.time,c.code,c.shift,c.operator,c.issues,(c.failed||[]).join('; '),c.remarks])});
+  saveBlob(new Blob(['﻿'+rows.map(function(r){return r.map(csvCell).join(',')}).join('\n')],{type:'text/csv'}),'machine-checks-'+S.day.slice(0,7)+'.csv');
+}
+
+$app.addEventListener('click',async function(e){
+  var b=e.target.closest('[data-act]');if(!b||b.disabled)return;
+  var a=b.dataset.act,v=b.dataset.v,id=b.dataset.id;
+  if(a==='nav'){location.hash=v;return}
+  if(a==='ans'){S.form.answers[+b.dataset.i]=v;render();return}
+  if(a==='shift'){S.form.shift=v;render();return}
+  if(a==='submit'){submit();return}
+  if(a==='again'){S.done=null;S.form=null;render();return}
+  if(a==='reload'){S.mLoaded=false;render();loadMachines().then(function(){var t=route().type;if(t==='hist')loadHistory();else if(t==='dash')loadChecks(false)});return}
+  if(a==='mode'){S.mode=v;render();return}
+  if(a==='goday'){S.day=b.dataset.d;S.mode='day';render();return}
+  if(a==='refresh'){loadChecks(false);return}
+  if(a==='csv'){exportCsv();return}
+  if(a==='hist'){location.hash=id+'/history';return}
+  if(a==='back'){location.hash=id;return}
+  if(a==='hrefresh'){loadHistory();return}
+  if(a==='hcsv'){exportHistCsv();return}
+  if(a==='print'){window.print();return}
+  if(a==='setpin'){var el=document.getElementById('f-pin');S.pin=(el&&el.value||'').trim();ssSet('mc_pin',S.pin);S.pinMsg='';S.cErr='';S.hErr='';if(route().type==='hist')loadHistory();else loadChecks(false);return}
+  if(a==='copy'){
+    try{await navigator.clipboard.writeText(linkFor(id));b.textContent='Copied'}catch(x){b.textContent='Select the link above'}
+    setTimeout(function(){b.textContent='Copy link'},1800);return}
+  if(a==='png'){
+    var host=$app.querySelector('.qr[data-id="'+id+'"]'),cv=host&&host.querySelector('canvas'),m2=S.machines.filter(function(x){return x.id===id})[0];
+    if(!cv)return;
+    var out=document.createElement('canvas');out.width=360;out.height=430;var cx=out.getContext('2d');
+    cx.fillStyle='#fff';cx.fillRect(0,0,360,430);cx.imageSmoothingEnabled=false;cx.drawImage(cv,20,20,320,320);
+    cx.fillStyle='#000';cx.textAlign='center';cx.font='600 34px monospace';cx.fillText(m2.code,180,388);
+    cx.font='500 16px sans-serif';cx.fillText('Scan to start the daily check',180,414);
+    out.toBlob(function(bl){saveBlob(bl,'QR-'+m2.code+'.png')});return}
+});
+$app.addEventListener('input',function(e){
+  var f=e.target.dataset&&e.target.dataset.f;if(!f)return;
+  if(f==='name'||f==='remarks'){
+    S.form[f]=e.target.value;
+    var m=S.machines.filter(function(x){return x.id===S.form.machineId})[0];
+    if(m){var r=readiness(m),sb=document.getElementById('submit'),h=document.getElementById('hint');
+      if(sb)sb.disabled=!(r.ok&&!S.submitting);if(h)h.textContent=r.hint}
+  }
+});
+$app.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&e.target.id==='f-pin'){e.preventDefault();var b=$app.querySelector('[data-act="setpin"]');if(b)b.click()}
+});
+$app.addEventListener('change',function(e){
+  var f=e.target.dataset&&e.target.dataset.f,v=e.target.value;if(!v)return;
+  if(f==='day'){var nm=v.slice(0,7)!==S.day.slice(0,7);S.day=v;if(nm)loadChecks(false);else render()}
+  if(f==='month'){S.day=v===today().slice(0,7)?today():v+'-01';loadChecks(false)}
+  if(f==='hmonth'){S.hMonth=v;loadHistory()}
+});
+window.addEventListener('hashchange',function(){
+  S.done=null;
+  var rt=route().type;
+  if(rt==='dash'&&CONFIGURED&&S.mLoaded)loadChecks(false);
+  else if(rt==='hist'&&CONFIGURED&&S.mLoaded)loadHistory();
+  else render();
+  window.scrollTo(0,0);
+});
+setInterval(function(){
+  var a=document.activeElement;
+  if(route().type==='dash'&&CONFIGURED&&S.cLoaded&&!S.cErr&&!document.hidden&&!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA')))loadChecks(true);
+},60000);
+
+/* ---------- start ---------- */
+render();
+window.addEventListener('beforeprint',function(){document.querySelectorAll('details.day').forEach(function(x){x.open=true})});
+if(CONFIGURED)loadMachines().then(function(){var t=route().type;if(t==='dash')loadChecks(false);else if(t==='hist')loadHistory()});
+})();
+</script>
+</body>
+</html>
