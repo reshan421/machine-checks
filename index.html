@@ -151,7 +151,7 @@ details.day summary::-webkit-details-marker{display:none}
 .qr img,.qr canvas{width:100%;height:auto;display:block}
 .linktxt{font-family:var(--f-mono);font-size:.72rem;word-break:break-all;color:var(--muted)}
 .qrtop{display:flex;align-items:center;justify-content:space-between;gap:14px}
-.sn{font-family:var(--f-mono);font-weight:600;font-size:.95rem;text-align:right;word-break:break-all;max-width:160px}
+.sn{font-family:var(--f-mono);font-weight:600;font-size:.95rem;text-align:right;word-break:break-all;max-width:160px;display:grid;gap:4px}
 .fixrow{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 .fixrow[aria-pressed="true"]{border-color:var(--ok);background:var(--ok-bg)}
 .fixrow .box{flex:none;width:24px;height:24px;border:2px solid var(--muted);border-radius:5px;display:grid;place-items:center;font-weight:700;color:var(--ok);background:var(--surface)}
@@ -240,7 +240,7 @@ async function apiPost(body){
   }finally{clearTimeout(t)}
 }
 function applyMachines(d){
-  S.machines=(d.machines||[]).map(function(m){return {id:slug(m.asset),asset:m.asset,code:m.code||'',name:m.name||'',location:m.location||'',serial:m.serial||'',
+  S.machines=(d.machines||[]).map(function(m){return {id:slug(m.asset),asset:m.asset,code:m.code||'',name:m.name||'',location:m.location||'',serial:m.serial||'',mno:m.mno||'',
     items:(m.items||[]).map(function(i){return {q:i.q,c:!!i.c}})}});
   S.locations=(d.locations||[]).slice();
 }
@@ -492,7 +492,7 @@ function viewMachine(id){
   var m=machineById(id);
   if(!m)return shell(head+'<div class="empty">This machine is not set up yet. Ask your supervisor to add it to the Machines tab of the Google Sheet.</div><p><button class="btn" data-act="nav" data-v="dashboard">Open dashboard</button></p>');
   var mhead='<div class="mhead"><div class="eyebrow">Daily check · '+esc(longDate(today()))+'</div><div class="mcode">'+esc(m.asset)+'</div>'+(m.name?'<div>'+esc(m.name)+'</div>':'')+
-    '<div class="metarow">'+(m.code?'<span class="chip">Machine code '+esc(m.code)+'</span>':'')+(m.location?'<span class="chip">'+esc(m.location)+'</span>':'')+(m.serial?'<span class="chip">S/N:'+esc(m.serial)+'</span>':'')+'</div></div>';
+    '<div class="metarow">'+(m.code?'<span class="chip">Machine code '+esc(m.code)+'</span>':'')+(m.location?'<span class="chip">'+esc(m.location)+'</span>':'')+(m.mno?'<span class="chip">Asset '+esc(m.asset)+'</span>':'')+(m.serial?'<span class="chip">S/N:'+esc(m.serial)+'</span>':'')+'</div></div>';
   if(!m.items.length)return shell(mhead+'<div class="empty">No checklist items are set up for machine code '+esc(m.code||'(none)')+'. Ask your supervisor to add them in the Checklist tab.</div>');
   if(S.done&&S.done.id===id){
     var d=S.done,bad=d.issues>0,q=d.queued;
@@ -646,8 +646,8 @@ function viewMach(){
   var ms=S.machines.filter(inLoc).slice().sort(function(a,b){return (a.location+'|'+a.asset)<(b.location+'|'+b.asset)?-1:1});
   var cards='';
   ms.forEach(function(m){
-    cards+='<div class="card qrcard"><div class="qrtop"><div class="qr" data-id="'+esc(m.id)+'">'+(NOT_LOCAL?'':'Upload the page to GitHub first')+'</div>'+(m.serial?'<div class="sn">S/N:'+esc(m.serial)+'</div>':'')+'</div>'+
-      '<div><strong class="mono" style="font-size:1.2rem">'+esc(m.asset)+'</strong> '+(m.code?'<span class="chip">'+esc(m.code)+'</span>':'')+'<div>'+esc(m.name)+'</div><div class="muted small">'+(m.location?esc(m.location)+' · ':'')+m.items.length+' checklist items</div></div>'+
+    cards+='<div class="card qrcard"><div class="qrtop"><div class="qr" data-id="'+esc(m.id)+'">'+(NOT_LOCAL?'':'Upload the page to GitHub first')+'</div>'+((m.serial||m.mno)?'<div class="sn">'+(m.serial?'<div>S/N:'+esc(m.serial)+'</div>':'')+(m.mno?'<div>Asset:'+esc(m.asset)+'</div>':'')+'</div>':'')+'</div>'+
+      '<div><strong class="mono" style="font-size:1.2rem">'+esc(m.mno||m.asset)+'</strong> '+(m.code?'<span class="chip">'+esc(m.code)+'</span>':'')+'<div>'+esc(m.name)+'</div><div class="muted small">'+(m.location?esc(m.location)+' · ':'')+m.items.length+' checklist items</div></div>'+
       '<div class="linktxt">'+esc(linkFor(m.id))+'</div>'+
       '<div class="row noprint"><button class="btn" data-act="copy" data-id="'+esc(m.id)+'">Copy link</button><button class="btn" data-act="png" data-id="'+esc(m.id)+'">Save QR image</button></div></div>';
   });
@@ -986,11 +986,11 @@ $app.addEventListener('click',async function(e){
   if(a==='png'){
     var host=$app.querySelector('.qr[data-id="'+id+'"]'),cv=host&&host.querySelector('canvas'),m2=machineById(id);
     if(!cv||!m2)return;
-    var out=document.createElement('canvas');out.width=360;out.height=m2.serial?476:450;var cx=out.getContext('2d');
+    var out=document.createElement('canvas');out.width=360;var nl=(m2.serial?1:0)+(m2.mno?1:0);out.height=450+26*nl;var cx=out.getContext('2d');
     cx.fillStyle='#fff';cx.fillRect(0,0,360,out.height);cx.imageSmoothingEnabled=false;cx.drawImage(cv,20,20,320,320);
-    cx.fillStyle='#000';cx.textAlign='center';cx.font='600 34px monospace';cx.fillText(m2.asset,180,378);
+    cx.fillStyle='#000';cx.textAlign='center';cx.font='600 34px monospace';cx.fillText(m2.mno||m2.asset,180,378);
     cx.font='500 18px sans-serif';cx.fillText(m2.name.slice(0,34),180,404);
-    if(m2.serial){cx.font='600 18px monospace';cx.fillText('S/N:'+m2.serial,180,430)}
+    var ly=430;cx.font='600 18px monospace';if(m2.serial){cx.fillText('S/N:'+m2.serial,180,ly);ly+=26}if(m2.mno){cx.fillText('Asset:'+m2.asset,180,ly)}
     cx.font='400 14px sans-serif';cx.fillText('Scan to start the daily check',180,out.height-20);
     out.toBlob(function(bl){saveBlob(bl,'QR-'+m2.asset+'.png')});return}
 });
