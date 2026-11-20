@@ -796,9 +796,22 @@ function stopScan(){
   if(SC.stream){try{SC.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}SC.stream=null}
   var v=document.getElementById('scanvideo');if(v){try{v.srcObject=null}catch(e){}}
 }
+/* The fallback QR reader (jsQR). Tried in this order: a copy next to index.html (if you upload one), then two CDNs. */
+var JSQR_URLS=['jsQR.js','https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js','https://unpkg.com/jsqr@1.4.0/dist/jsQR.js'],jsqrP=null;
 function loadJsQR(){
   if(window.jsQR)return Promise.resolve(true);
-  return new Promise(function(res){var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js';s.onload=function(){res(!!window.jsQR)};s.onerror=function(){res(false)};document.head.appendChild(s)});
+  if(jsqrP)return jsqrP;
+  var tryAt=function(i){
+    if(window.jsQR)return Promise.resolve(true);
+    if(i>=JSQR_URLS.length)return Promise.resolve(false);
+    return new Promise(function(res){
+      var el=document.createElement('script');el.src=JSQR_URLS[i];
+      el.onload=function(){res(!!window.jsQR)};el.onerror=function(){el.remove();res(false)};
+      document.head.appendChild(el);
+    }).then(function(ok){return ok?true:tryAt(i+1)});
+  };
+  jsqrP=tryAt(0).then(function(ok){if(!ok)jsqrP=null;return ok});
+  return jsqrP;
 }
 async function startScan(){
   stopScan();var run=SC.run;
@@ -812,7 +825,7 @@ async function startScan(){
   if(run!==SC.run)return;
   SC.det=null;
   if('BarcodeDetector' in window){try{SC.det=new window.BarcodeDetector({formats:['qr_code']})}catch(e){SC.det=null}}
-  if(!SC.det){var ok=await loadJsQR();if(run!==SC.run)return;if(!ok){scanMsg('The scanner could not be loaded (no connection). Open the phone camera app, or type the asset code below.',true);return}}
+  if(!SC.det){var ok=await loadJsQR();if(run!==SC.run)return;if(!ok){scanMsg('The scanner could not be loaded. Open the phone camera app and scan the label, or type the asset code below.',true);return}}
   scanMsg('Point the camera at the QR label on the machine.');
   scanLoop(run);
 }
@@ -1023,6 +1036,7 @@ setInterval(function(){
 /* ---------- start ---------- */
 render();
 if(CONFIGURED)loadMachines().then(function(){routeLoad();flushQueue()});
+if(NOT_LOCAL&&!('BarcodeDetector' in window)&&navigator.onLine!==false)setTimeout(function(){loadJsQR()},1500);
 if('serviceWorker' in navigator&&NOT_LOCAL){try{navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}}
 })();
 </script>
