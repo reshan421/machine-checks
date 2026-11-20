@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Daily Machine Checks</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a5ea8">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Machine Checks">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: one narrow column for the mechanic's checklist; a wider dashboard (day list, month grid), issues log and QR sheet for supervisors. */
@@ -158,6 +166,11 @@ details.day summary::-webkit-details-marker{display:none}
   .gridwrap{overflow:visible}
   details.day{break-inside:avoid}
 }
+.scanbox{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:1/1;max-width:100%}
+.scanbox video{width:100%;height:100%;object-fit:cover;display:block}
+.reticle{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.92);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.3);pointer-events:none}
+.bigscan{min-height:84px;font-size:1.2rem}
+.rowbtns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
 @media (prefers-reduced-motion:no-preference){.btn,.tab{transition:background .12s}}
 </style>
 </head>
@@ -200,7 +213,9 @@ try{var sm=JSON.parse(lsGet('mc_mech')||'null');if(sm&&sm.epf&&sm.name)S.mech.se
 
 function route(){var h=decodeURIComponent(location.hash.replace(/^#/,'')).toLowerCase(),parts=h.split('/');
   if(parts[1]==='history')return {type:'hist',id:parts[0]};
-  if(!h||h==='dashboard')return {type:'dash'};
+  if(!h||h==='home')return {type:'home'};
+  if(h==='scan')return {type:'scan'};
+  if(h==='dashboard')return {type:'dash'};
   if(h==='machines')return {type:'mach'};
   if(h==='issues')return {type:'issues'};
   if(h==='moves')return {type:'moves'};
@@ -327,6 +342,7 @@ function routeLoad(){
   else if(t==='moves')loadMoves(false);
   else if(t==='hist')loadHistory();
   else if(t==='machine'){render();loadToday();loadOpenIssues()}
+  else if(t==='scan'){if(!document.getElementById('scanvideo'))render()}
   else render();
 }
 
@@ -422,7 +438,7 @@ function mechHtml(){
 /* ---------- views ---------- */
 function header(cur){
   var t=function(v,label,key){return '<button class="tab" data-act="nav" data-v="'+v+'"'+(cur===key?' aria-current="page"':'')+'>'+label+'</button>'};
-  return '<div class="top"><div class="brand">Daily Machine Checks</div><nav class="tabs" aria-label="Sections">'+t('dashboard','Dashboard','dash')+t('issues','Issues','issues')+t('moves','Moves','moves')+t('machines','Machines &amp; QR','mach')+'</nav></div>';
+  return '<div class="top"><div class="brand">Daily Machine Checks</div><nav class="tabs" aria-label="Sections">'+t('home','Home','home')+t('dashboard','Dashboard','dash')+t('issues','Issues','issues')+t('moves','Moves','moves')+t('machines','Machines &amp; QR','mach')+'</nav></div>';
 }
 function setupNote(){return '<div class="note">This page is not connected to its Google Sheet yet. Put the Web app URL into <code>API_URL</code> in index.html (see README.md).</div>'}
 function pinCard(title,btn){
@@ -484,7 +500,7 @@ function viewMachine(id){
     var mv=d.moved?'<p class="small" style="margin:10px 0 0">Location '+(q?'will change':'updated')+': <strong>'+esc(d.from||'(none)')+' → '+esc(d.to)+'</strong></p>':'';
     return shell('<div class="card done"><div class="tick'+(q?' wait':(bad?' bad':''))+'">'+(q?'↑':(bad?'!':'✓'))+'</div><h2>'+(q?'Saved on this phone':'Check submitted')+'</h2><p class="muted">'+line+'</p>'+
       (q?'<p class="small" style="margin:10px 0 0">There is no connection right now. The check will be sent automatically when the phone is online. Do not clear the browser data until it is sent.</p>':'')+mv+
-      '<div class="stack" style="margin-top:14px">'+queueHtml()+'<button class="btn big" data-act="again">Submit another check</button></div></div>');
+      '<div class="stack" style="margin-top:14px">'+queueHtml()+'<button class="btn primary big" data-act="nav" data-v="scan">Scan next machine</button><button class="btn big" data-act="again">Submit another check</button></div></div>');
   }
   if(!S.form||S.form.id!==id)S.form={id:id,shift:'',answers:{},remarks:'',location:m.location||'',uid:''};
   var f=S.form,r=readiness(m),items='';
@@ -503,7 +519,7 @@ function viewMachine(id){
     '<label class="f" for="f-rem">'+(r.iss?'Describe the problem (required)':'Remarks (optional)')+'<textarea id="f-rem" data-f="remarks" maxlength="1000" placeholder="'+(r.iss?'What is wrong and where':'Anything the next shift should know')+'">'+esc(f.remarks)+'</textarea></label>'+
     (S.formErr?'<div class="err">'+esc(S.formErr)+'</div>':'')+
     '<div><button class="btn primary big" id="submit" data-act="submit"'+(r.ok&&!S.submitting?'':' disabled')+'>'+(S.submitting?'Saving…':'Submit check')+'</button><p class="muted small" id="hint" style="margin:8px 0 0">'+esc(r.hint)+'</p></div>'+
-    '<div class="noprint" style="text-align:center;border-top:1px solid var(--line);padding-top:14px"><button class="btn" data-act="hist" data-id="'+esc(m.id)+'">Auditor: view this month\'s history</button></div>'+
+    '<div class="noprint rowbtns" style="border-top:1px solid var(--line);padding-top:14px"><button class="btn" data-act="nav" data-v="scan">Scan another machine</button><button class="btn" data-act="hist" data-id="'+esc(m.id)+'">Auditor: view this month\'s history</button></div>'+
     '</div>');
 }
 
@@ -720,15 +736,20 @@ function histBody(m,month){
 
 function render(){
   var r=route(),html;
+  if(r.type!=='scan')stopScan();
   if(r.type==='machine')html=viewMachine(r.id);
+  else if(r.type==='home')html=viewHome();
+  else if(r.type==='scan')html=viewScan();
   else if(r.type==='hist')html=viewHistory(r.id);
   else html='<div class="wrap">'+header(r.type)+(r.type==='dash'?viewDash():(r.type==='issues'?viewIssues():(r.type==='moves'?viewMoves():viewMach())))+'</div>';
   $app.innerHTML=html;
   if(r.type==='mach')drawQR();
+  if(r.type==='scan')startScan();
 }
 function softRender(){
   var a=document.activeElement;
   if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return;
+  if(route().type==='scan')return;
   render();
 }
 function drawQR(){
@@ -738,6 +759,109 @@ function drawQR(){
     var el=els[i];el.textContent='';
     try{new QRCode(el,{text:linkFor(el.dataset.id),width:256,height:256,correctLevel:QRCode.CorrectLevel.M})}catch(e){el.textContent='QR failed'}
   }
+}
+
+
+/* ---------- home, scan and install ---------- */
+var installEvt=null;
+function isStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(e){return false}}
+function isIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();installEvt=e;if(route().type==='home')softRender()});
+window.addEventListener('appinstalled',function(){installEvt=null;if(route().type==='home')render()});
+function installHtml(){
+  if(isStandalone())return '';
+  if(installEvt)return '<div class="card stack"><h2>Install the app</h2><p class="muted small" style="margin:0">Adds an icon to your home screen. It opens full screen and keeps working with a weak connection.</p><button class="btn" data-act="install">Install app</button></div>';
+  if(isIOS())return '<div class="card stack"><h2>Add to the home screen</h2><p class="muted small" style="margin:0">In Safari, tap the Share button, then <strong>Add to Home Screen</strong>.</p></div>';
+  return '<div class="card stack"><h2>Add to the home screen</h2><p class="muted small" style="margin:0">Open the browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</p></div>';
+}
+function codeHtml(){
+  return '<div class="card stack"><label class="f" for="f-code">Or type the asset code<input type="text" id="f-code" data-f="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="For example SM001"></label>'+
+    '<div class="err" id="codeerr" style="display:none"></div><button class="btn" data-act="gocode">Open checklist</button></div>';
+}
+function viewHome(){
+  var nav=function(v,l){return '<button class="btn" data-act="nav" data-v="'+v+'">'+l+'</button>'};
+  return '<div class="wrap narrow"><div class="top"><div class="brand">Daily Machine Checks</div></div>'+(CONFIGURED?'':setupNote())+
+    '<div class="stack">'+queueHtml()+'<button class="btn primary big bigscan" data-act="nav" data-v="scan">Scan machine QR code</button>'+codeHtml()+installHtml()+
+    '<div class="card stack"><h2>Supervisors and auditors</h2><div class="metarow">'+nav('dashboard','Dashboard')+nav('issues','Issues')+nav('moves','Moves')+nav('machines','Machines &amp; QR')+'</div></div></div></div>';
+}
+function viewScan(){
+  return '<div class="wrap narrow"><div class="top"><div class="brand">Scan machine QR code</div><nav class="tabs" aria-label="Sections"><button class="tab" data-act="nav" data-v="home">Home</button></nav></div>'+
+    '<div class="stack"><div class="scanbox"><video id="scanvideo" playsinline muted autoplay></video><div class="reticle"></div></div>'+
+    '<p id="scanmsg" class="muted" role="status" aria-live="polite" style="margin:0">Starting the camera…</p>'+codeHtml()+'</div></div>';
+}
+var SC={stream:null,timer:0,det:null,last:'',lastAt:0,canvas:null,run:0};
+function scanMsg(t,bad){var el=document.getElementById('scanmsg');if(el){el.textContent=t;el.style.color=bad?'var(--bad)':''}}
+function stopScan(){
+  SC.run++;clearTimeout(SC.timer);
+  if(SC.stream){try{SC.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}SC.stream=null}
+  var v=document.getElementById('scanvideo');if(v){try{v.srcObject=null}catch(e){}}
+}
+function loadJsQR(){
+  if(window.jsQR)return Promise.resolve(true);
+  return new Promise(function(res){var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js';s.onload=function(){res(!!window.jsQR)};s.onerror=function(){res(false)};document.head.appendChild(s)});
+}
+async function startScan(){
+  stopScan();var run=SC.run;
+  var v=document.getElementById('scanvideo');if(!v)return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){scanMsg('This browser cannot use the camera here. Open the phone camera app and scan the label, or type the asset code below.',true);return}
+  var stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false})}
+  catch(e){if(run!==SC.run)return;scanMsg(e&&e.name==='NotAllowedError'?'Camera permission was refused. Allow the camera for this page in the browser settings, or type the asset code below.':'The camera could not be started. Type the asset code below instead.',true);return}
+  if(run!==SC.run||route().type!=='scan'){stream.getTracks().forEach(function(t){t.stop()});return}
+  SC.stream=stream;v.srcObject=stream;try{await v.play()}catch(e){}
+  if(run!==SC.run)return;
+  SC.det=null;
+  if('BarcodeDetector' in window){try{SC.det=new window.BarcodeDetector({formats:['qr_code']})}catch(e){SC.det=null}}
+  if(!SC.det){var ok=await loadJsQR();if(run!==SC.run)return;if(!ok){scanMsg('The scanner could not be loaded (no connection). Open the phone camera app, or type the asset code below.',true);return}}
+  scanMsg('Point the camera at the QR label on the machine.');
+  scanLoop(run);
+}
+function jsqrRead(v){
+  var w=v.videoWidth,h=v.videoHeight,k=Math.min(1,640/Math.max(w,h)),cw=Math.max(1,Math.round(w*k)),ch=Math.max(1,Math.round(h*k));
+  if(!SC.canvas)SC.canvas=document.createElement('canvas');
+  SC.canvas.width=cw;SC.canvas.height=ch;
+  var cx=SC.canvas.getContext('2d',{willReadFrequently:true});cx.drawImage(v,0,0,cw,ch);
+  var img=cx.getImageData(0,0,cw,ch),r=window.jsQR&&window.jsQR(img.data,cw,ch,{inversionAttempts:'dontInvert'});
+  return r&&r.data||'';
+}
+function scanLoop(run){
+  if(run!==SC.run)return;
+  var v=document.getElementById('scanvideo');
+  if(!v||v.readyState<2||!v.videoWidth){SC.timer=setTimeout(function(){scanLoop(run)},150);return}
+  var p;try{p=SC.det?SC.det.detect(v).then(function(r){return r&&r[0]&&r[0].rawValue||''}):Promise.resolve(jsqrRead(v))}catch(e){p=Promise.resolve('')}
+  p.catch(function(){return ''}).then(function(text){
+    if(run!==SC.run)return;
+    if(text&&scanHandle(text))return;
+    SC.timer=setTimeout(function(){scanLoop(run)},150);
+  });
+}
+/* A scanned code is only accepted if it is a link to this same page (or a known asset code). Anything else is ignored. */
+function scanTarget(text){
+  text=String(text).trim();
+  var base=function(u){return u.origin+u.pathname.replace(/index\.html$/,'')};
+  try{
+    var u=new URL(text),me=new URL(PAGE_BASE),h=u.hash.replace(/^#/,'').toLowerCase();
+    if(base(u)===base(me)&&h&&h!=='scan'&&h!=='home')return h;
+  }catch(e){}
+  var id=slug(text);
+  if(id&&S.machines.length&&machineById(id))return id;
+  return '';
+}
+function scanHandle(text){
+  var t=scanTarget(text);
+  if(!t){
+    var now=Date.now();
+    if(text!==SC.last||now-SC.lastAt>3000){SC.last=text;SC.lastAt=now;scanMsg('That QR code is not a machine label for this system. Try another.',true)}
+    return false;
+  }
+  stopScan();location.hash=t;return true;
+}
+function goCode(){
+  var el=document.getElementById('f-code'),raw=(el&&el.value||'').trim(),er=document.getElementById('codeerr');
+  if(!raw)return;
+  var id=slug(raw);
+  if(S.mLoaded&&!machineById(id)){if(er){er.textContent='No machine has the code "'+raw+'". Check the label and try again.';er.style.display=''}return}
+  location.hash=id;
 }
 
 /* ---------- actions ---------- */
@@ -824,6 +948,8 @@ $app.addEventListener('click',async function(e){
   if(a==='clsel'){var no=b.dataset.no;S.cl.sel[no]=!S.cl.sel[no];S.cl.msg='';render();return}
   if(a==='close'){closeIssues();return}
   if(a==='flush'){flushQueue();return}
+  if(a==='gocode'){goCode();return}
+  if(a==='install'){if(installEvt){try{installEvt.prompt();await installEvt.userChoice}catch(x){}installEvt=null;render()}return}
   if(a==='dropfailed'){qSet(FK,[]);render();return}
   if(a==='again'){S.done=null;S.form=null;render();loadToday();loadOpenIssues();return}
   if(a==='mechpick'){var r=S.mech.results[+b.dataset.i];if(r){S.mech.sel={epf:String(r.epf),name:String(r.name)};lsSet('mc_mech',JSON.stringify(S.mech.sel));S.mech.q='';S.mech.results=[];render()}return}
@@ -868,6 +994,7 @@ $app.addEventListener('input',function(e){
 });
 $app.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&e.target.id==='f-pin'){e.preventDefault();var b=$app.querySelector('[data-act="setpin"]');if(b)b.click()}
+  if(e.key==='Enter'&&e.target.id==='f-code'){e.preventDefault();goCode()}
 });
 $app.addEventListener('change',function(e){
   var f=e.target.dataset&&e.target.dataset.f,v=e.target.value;
@@ -880,7 +1007,10 @@ $app.addEventListener('change',function(e){
 });
 window.addEventListener('hashchange',function(){S.done=null;S.cl={sel:{},text:'',busy:false,msg:'',err:'',uid:''};routeLoad();window.scrollTo(0,0)});
 window.addEventListener('online',function(){flushQueue()});
-document.addEventListener('visibilitychange',function(){if(!document.hidden)flushQueue()});
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden)flushQueue();
+  if(route().type==='scan'){if(document.hidden)stopScan();else startScan()}
+});
 setInterval(flushQueue,30000);
 window.addEventListener('beforeprint',function(){document.querySelectorAll('details.day').forEach(function(x){x.open=true})});
 setInterval(function(){
